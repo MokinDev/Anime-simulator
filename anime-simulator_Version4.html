@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Anime Simulator — Customizable Character + Animated Background</title>
+<style>
+  :root{
+    --panel:#fff;
+    --accent:#ff6b81;
+    --ui-text:#184059;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{display:flex;gap:20px;padding:20px;background:linear-gradient(180deg,#f7fbff,#eafcff);box-sizing:border-box;color:var(--ui-text)}
+  .container{display:flex;gap:20px;width:100%;max-width:1200px;margin:0 auto;}
+  .controls{
+    width:360px;background:var(--panel);border-radius:12px;padding:16px;box-shadow:0 6px 22px rgba(12,40,70,.08);
+  }
+  .controls h2{margin:6px 0 14px;font-size:18px}
+  .row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+  label{font-size:13px;color:#31506b;min-width:120px}
+  select,input[type="text"],input[type="range"]{flex:1;padding:8px;border-radius:8px;border:1px solid #e3eef6;background:#fbfeff}
+  input[type="color"]{width:48px;height:36px;border:0;background:transparent;padding:0}
+  input[type="checkbox"]{transform:scale(1.05)}
+  button{cursor:pointer;padding:9px 12px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:600}
+  button.secondary{background:#1f7bdc}
+  .preview{
+    flex:1;background:linear-gradient(180deg,#ffffff,#f4fbff);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;box-shadow:0 6px 22px rgba(12,40,70,.06);
+    position:relative;
+  }
+  .stage{
+    width:560px;height:420px;border-radius:10px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border:1px solid rgba(10,30,50,.04);
+    background:linear-gradient(180deg,#e0f7ff,#a7ddff);
+  }
+  .speech{
+    position:absolute;top:18px;left:18px;background:rgba(255,255,255,.95);padding:10px 12px;border-radius:10px;border:1px solid rgba(10,30,50,.06);max-width:45%;
+    box-shadow:0 6px 18px rgba(8,30,60,.06);font-weight:600;color:#0b2947;display:none;z-index:30;
+  }
+  .speech.visible{display:block}
+
+  .cloud-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+  .cloud{position:absolute;filter:drop-shadow(0 6px 10px rgba(0,0,0,0.06));opacity:0.95}
+  .cloud svg{height:80px;width:auto;display:block}
+  .cloud.layer-back{opacity:0.65;transform:translateY(10px) scale(1.1)}
+  .cloud.layer-front{opacity:0.95;transform:translateY(-6px) scale(1)}
+
+  @keyframes drift-left {
+    from { transform: translateX(110%); }
+    to   { transform: translateX(-110%); }
+  }
+  @keyframes drift-right {
+    from { transform: translateX(-110%); }
+    to   { transform: translateX(110%); }
+  }
+
+  .particle-canvas{position:absolute;inset:0;z-index:5;pointer-events:none}
+
+  svg#animeSVG{width:320px;height:340px;position:relative;z-index:10}
+  .char-root{transition:transform .25s ease}
+  .pose-wave .arm-right{transform-origin:230px 220px;animation:wave 1s ease-in-out infinite}
+  .pose-jump .char-root{animation:jump 0.8s ease-in-out infinite}
+  @keyframes wave{
+    0%{transform:rotate(0deg)}
+    25%{transform:rotate(30deg)}
+    50%{transform:rotate(0deg)}
+    75%{transform:rotate(25deg)}
+    100%{transform:rotate(0deg)}
+  }
+  @keyframes jump{
+    0%{transform:translateY(0)}
+    50%{transform:translateY(-18px)}
+    100%{transform:translateY(0)}
+  }
+
+  .toolbar{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .muted{font-size:12px;color:#5d7b8f}
+
+  @media (max-width:980px){body{padding:12px} .container{flex-direction:column} .controls{width:100%} .preview{width:100%} .stage{width:100%;height:56vw;max-height:520px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="controls" id="controls">
+    <h2>Anime Simulator — Customization</h2>
+
+    <!-- Sky & background controls (kept from previous version) -->
+    <div class="row">
+      <label for="bgCycle">Day/Night cycle</label>
+      <input type="checkbox" id="bgCycle" checked />
+    </div>
+
+    <div class="row">
+      <label for="timeOfDay">Time</label>
+      <input type="range" id="timeOfDay" min="0" max="100" value="25" />
+    </div>
+
+    <hr/>
+
+    <!-- Character color pickers -->
+    <div class="row">
+      <label for="hairColor">Hair color</label>
+      <input type="color" id="hairColor" value="#2b2b2b">
+    </div>
+
+    <div class="row">
+      <label for="skinColor">Skin</label>
+      <input type="color" id="skinColor" value="#ffd8b6">
+    </div>
+
+    <div class="row">
+      <label for="eyeColor">Eyes</label>
+      <input type="color" id="eyeColor" value="#2b6fdb">
+    </div>
+
+    <div class="row">
+      <label for="outfitColor">Outfit</label>
+      <input type="color" id="outfitColor" value="#ff6b81">
+    </div>
+
+    <hr/>
+
+    <!-- New customization: hair style, outfit style -->
+    <div class="row">
+      <label for="hairStyle">Hair style</label>
+      <select id="hairStyle">
+        <option value="short">Short</option>
+        <option value="long">Long</option>
+        <option value="ponytail">Ponytail</option>
+        <option value="bangs">Bangs</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="outfitStyle">Outfit style</label>
+      <select id="outfitStyle">
+        <option value="tshirt">T-shirt</option>
+        <option value="hoodie">Hoodie</option>
+        <option value="dress">Dress</option>
+      </select>
+    </div>
+
+    <!-- Accessories -->
+    <div class="row">
+      <label>Accessories</label>
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1">
+        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="glassesToggle">Glasses</label>
+        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="hatToggle">Hat</label>
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="accColor">Accessory color</label>
+      <input type="color" id="accColor" value="#2b2b2b"/>
+    </div>
+
+    <div class="toolbar">
+      <button id="apply">Apply</button>
+      <button id="random" class="secondary">Randomize</button>
+      <button id="reset">Reset</button>
+      <button id="download">Download PNG</button>
+    </div>
+
+    <p class="muted" style="margin-top:10px">Select hair and outfit styles, toggle glasses or a hat, then click Apply. Randomize will pick a complete random look.</p>
+  </div>
+
+  <div class="preview">
+    <div class="stage" id="stage" aria-live="polite">
+      <canvas class="particle-canvas" id="particleCanvas"></canvas>
+      <div class="cloud-layer" id="cloudLayer"></div>
+      <div class="speech" id="speech"></div>
+
+      <!-- Character SVG with multiple style groups (hide/show per selection) -->
+      <svg id="animeSVG" viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anime character">
+        <defs><filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.2"/></filter></defs>
+        <g id="scene" class="char-root" transform="translate(0,0)">
+          <ellipse cx="160" cy="315" rx="110" ry="12" fill="rgba(10,30,50,0.06)"/>
+          <g id="bodyGroup">
+
+            <!-- OUTFIT variations (only one visible at a time) -->
+            <g id="outfit-tshirt" class="outfit">
+              <ellipse id="torso-tshirt" cx="160" cy="230" rx="62" ry="72" fill="#ff6b81" />
+              <path d="M100 240 Q160 260 220 240 L220 280 Q160 310 100 280 Z" fill="#ff6b81" opacity="0.9"/>
+            </g>
+
+            <g id="outfit-hoodie" class="outfit" style="display:none">
+              <ellipse id="torso-hoodie" cx="160" cy="232" rx="66" ry="74" fill="#ff6b81" />
+              <path d="M110 220 Q160 200 210 220 L210 275 Q160 305 110 275 Z" fill="#ff6b81" opacity="0.95"/>
+              <rect x="130" y="200" width="60" height="36" rx="18" fill="#ffffff" opacity="0.12"/>
+            </g>
+
+            <g id="outfit-dress" class="outfit" style="display:none">
+              <path id="torso-dress" d="M100 240 Q160 200 220 240 L220 300 Q160 340 100 300 Z" fill="#ff6b81"/>
+            </g>
+
+            <!-- left arm -->
+            <g id="arm-left" class="arm-left">
+              <path id="arm-left-skin" d="M95 190 Q120 200 128 215 Q96 230 90 200 Z" fill="#ffd8b6" />
+            </g>
+            <!-- right arm -->
+            <g id="arm-right" class="arm-right">
+              <path id="arm-right-skin" d="M225 190 Q200 200 192 215 Q224 230 230 200 Z" fill="#ffd8b6" />
+            </g>
+          </g>
+
+          <!-- HEAD group -->
+          <g id="headGroup" transform="translate(0,-12)">
+            <circle id="head" cx="160" cy="120" r="64" fill="#ffd8b6" />
+
+            <!-- HAIR variants -->
+            <g id="hair-short">
+              <path id="hairBack-short" d="M110 96 Q160 44 210 96 Q206 80 160 60 Q114 84 110 96 Z" fill="#2b2b2b" filter="url(#soft)" />
+              <path id="hairFront-short" d="M120 88 Q160 40 200 88 Q182 84 160 72 Q138 84 120 88 Z" fill="#2b2b2b" />
+            </g>
+
+            <g id="hair-long" style="display:none">
+              <path id="hairBack-long" d="M100 96 Q160 -10 220 96 Q220 120 200 156 Q160 180 120 156 Q100 120 100 96 Z" fill="#2b2b2b" filter="url(#soft)"/>
+              <path id="hairFront-long" d="M120 86 Q160 30 200 86 Q182 82 160 70 Q138 82 120 86 Z" fill="#2b2b2b"/>
+            </g>
+
+            <g id="hair-ponytail" style="display:none">
+              <path id="hairBack-pony" d="M110 96 Q160 36 210 96 Q206 80 160 58 Q114 84 110 96 Z" fill="#2b2b2b" filter="url(#soft)"/>
+              <path id="ponytail" d="M210 108 Q250 110 266 150 Q240 170 220 150 Q210 140 210 108 Z" fill="#2b2b2b"/>
+              <path id="hairFront-pony" d="M120 92 Q160 40 200 92 Q182 88 160 76 Q138 88 120 92 Z" fill="#2b2b2b"/>
+            </g>
+
+            <g id="hair-bangs" style="display:none">
+              <path id="hairBack-bangs" d="M110 96 Q160 34 210 96 Q206 80 160 60 Q114 84 110 96 Z" fill="#2b2b2b" filter="url(#soft)"/>
+              <path id="bangs" d="M110 92 Q140 60 160 82 Q180 60 210 92 Q190 82 160 72 Q130 82 110 92 Z" fill="#2b2b2b"/>
+            </g>
+
+            <!-- EYES -->
+            <g id="eyesGroup">
+              <g id="eye-left" transform="translate(-28,0)">
+                <ellipse id="eyeL-white" cx="160" cy="120" rx="16" ry="12" fill="#fff"/>
+                <circle id="eyeL-iris" cx="160" cy="120" r="7" fill="#2b6fdb"/>
+                <circle cx="164" cy="116" r="2.2" fill="#fff"/>
+              </g>
+              <g id="eye-right" transform="translate(28,0)">
+                <ellipse id="eyeR-white" cx="160" cy="120" rx="16" ry="12" fill="#fff"/>
+                <circle id="eyeR-iris" cx="160" cy="120" r="7" fill="#2b6fdb"/>
+                <circle cx="164" cy="116" r="2.2" fill="#fff"/>
+              </g>
+            </g>
+
+            <!-- MOUTH -->
+            <path id="mouth" d="M146 150 Q160 160 174 150" stroke="#8a3a3a" stroke-width="3" stroke-linecap="round" fill="none" />
+
+            <!-- ACCESSORIES -->
+
+            <!-- Glasses (toggle via JS) -->
+            <g id="glasses" style="display:none" transform="translate(0,0)">
+              <rect x="118" y="106" width="48" height="28" rx="10" ry="10" fill="none" stroke="#2b2b2b" stroke-width="4" />
+              <rect x="156" y="106" width="48" height="28" rx="10" ry="10" fill="none" stroke="#2b2b2b" stroke-width="4" />
+              <path d="M166 118 L154 118" stroke="#2b2b2b" stroke-width="4" stroke-linecap="round"/>
+            </g>
+
+            <!-- Hat -->
+            <g id="hat" style="display:none">
+              <path id="hat-brim" d="M106 72 Q160 44 214 72 Q210 86 160 74 Q110 86 106 72 Z" fill="#2b2b2b"/>
+              <path id="hat-top" d="M118 46 Q160 18 202 46 Q196 54 160 40 Q124 54 118 46 Z" fill="#2b2b2b" />
+            </g>
+
+          </g>
+        </g>
+      </svg>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:12px">
+      <button id="screenshot" class="secondary">Preview Screenshot</button>
+      <button id="centerPose">Center Reset</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* Enhanced Anime Simulator
+   - Adds selectable hair/outfit styles
+   - Glasses & hat toggles with accessory color
+   - Integrates with animated background from previous build
+*/
+
+/* UI elements */
+const ui = {
+  hairColor: document.getElementById('hairColor'),
+  skinColor: document.getElementById('skinColor'),
+  eyeColor: document.getElementById('eyeColor'),
+  outfitColor: document.getElementById('outfitColor'),
+  hairStyle: document.getElementById('hairStyle'),
+  outfitStyle: document.getElementById('outfitStyle'),
+  glassesToggle: document.getElementById('glassesToggle'),
+  hatToggle: document.getElementById('hatToggle'),
+  accColor: document.getElementById('accColor'),
+  apply: document.getElementById('apply'),
+  random: document.getElementById('random'),
+  reset: document.getElementById('reset'),
+  download: document.getElementById('download'),
+  screenshot: document.getElementById('screenshot'),
+  centerPose: document.getElementById('centerPose'),
+  speech: document.getElementById('speech'),
+  stage: document.getElementById('stage'),
+  cloudLayer: document.getElementById('cloudLayer'),
+  particleCanvas: document.getElementById('particleCanvas'),
+  animeSVG: document.getElementById('animeSVG'),
+  // background controls (still present)
+  bgCycle: document.getElementById('bgCycle'),
+  timeOfDay: document.getElementById('timeOfDay'),
+  cycleSpeed: document.getElementById('cycleSpeed') || { value: 12000 },
+  cloudToggle: document.getElementById('cloudToggle') || { checked: true },
+  cloudDensity: document.getElementById('cloudDensity') || { value: 6 },
+  cloudSpeed: document.getElementById('cloudSpeed') || { value: 16 },
+  particlesToggle: document.getElementById('particlesToggle') || { checked: true },
+  particleCount: document.getElementById('particleCount') || { value: 40 }
+};
+
+/* Minimal background engine (adapted from previous version) */
+let running = true, lastUpdate = performance.now(), timeNormalized = ui.timeOfDay ? ui.timeOfDay.value/100 : 0.25;
+let cloudItems = [];
+function lerp(a,b,t){ return a + (b-a)*t; }
+function hexToRgb(h){
+  h = h.replace('#',''); if(h.length===3) h = h.split('').map(x=>x+x).join('');
+  const n = parseInt(h,16);
+  return {r:(n>>16)&255,g:(n>>8)&255,b:n&255};
+}
+function rgbToHex(r,g,b){ return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+function interpolateColor(a,b,t){ const A=hexToRgb(a), B=hexToRgb(b); return rgbToHex(Math.round(lerp(A.r,B.r,t)), Math.round(lerp(A.g,B.g,t)), Math.round(lerp(A.b,B.b,t))); }
+function skyColorsAt(t){
+  t = (t%1+1)%1;
+  if(t < 0.2){ const m = t/0.2; return {top: interpolateColor('#001124','#04284a',m), bottom: interpolateColor('#00172a','#063055',m)};}
+  if(t < 0.4){ const m = (t-0.2)/0.2; return {top: interpolateColor('#04284a','#8ec6ff',m), bottom: interpolateColor('#063055','#dff3ff',m)};}
+  if(t < 0.6) return {top:'#8ec6ff',bottom:'#dff3ff'};
+  if(t < 0.8){ const m=(t-0.6)/0.2; return {top: interpolateColor('#8ec6ff','#ff9d6e',m), bottom: interpolateColor('#dff3ff','#ffd7b6',m)};}
+  const m=(t-0.8)/0.2; return {top: interpolateColor('#ff9d6e','#001124',m), bottom: interpolateColor('#ffd7b6','#00172a',m)};
+}
+function applySky(t){ const colors = skyColorsAt(t); document.getElementById('stage').style.background = `linear-gradient(180deg, ${colors.top}, ${colors.bottom})`; }
+
+/* Clouds - simplified */
+function clearClouds(){ cloudItems=[]; const layer=document.getElementById('cloudLayer'); while(layer.firstChild) layer.removeChild(layer.firstChild); }
+function createClouds(count){
+  clearClouds();
+  const rect = document.getElementById('stage').getBoundingClientRect();
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div'); el.className='cloud';
+    const layer = (i%3===0)?'layer-back':((i%3===1)?'layer-front':'layer-mid'); el.classList.add(layer);
+    const h = 30 + Math.random()*90; el.style.height = `${h}px`;
+    const y = 10 + Math.random()*(rect.height-90); el.style.top = `${y}px`;
+    const dir = Math.random()>0.5?'left':'right'; el.dataset.dir = dir;
+    const baseSpeed = 16; const speedMult = 0.6 + Math.random()*1.6; const duration=(baseSpeed*speedMult)+(Math.random()*10-5);
+    el.style.animation = `${dir === 'left' ? 'drift-left' : 'drift-right'} ${duration}s linear infinite`;
+    el.style.left = `${Math.random()*100}%`;
+    el.style.opacity = 0.5 + Math.random()*0.5;
+    el.style.transform += ` scale(${0.6+Math.random()*0.9})`;
+    el.innerHTML = `<svg viewBox="0 0 64 22" preserveAspectRatio="xMinYMid meet" aria-hidden="true"><g fill="white"><ellipse cx="18" cy="12" rx="14" ry="8" /><ellipse cx="34" cy="10" rx="12" ry="7" /><ellipse cx="46" cy="12" rx="10" ry="7" /></g></svg>`;
+    document.getElementById('cloudLayer').appendChild(el);
+    cloudItems.push(el);
+  }
+}
+function updateClouds(){ createClouds(parseInt(6,10)); }
+
+/* Particle engine (very small) */
+class ParticleEngine {
+  constructor(canvas){
+    this.canvas=canvas; this.ctx=canvas.getContext('2d'); this.particles=[]; this.running=false; this.last=performance.now(); this.resize();
+    window.addEventListener('resize',()=>this.resize());
+  }
+  resize(){ const rect = document.getElementById('stage').getBoundingClientRect(); this.canvas.width = rect.width*devicePixelRatio; this.canvas.height = rect.height*devicePixelRatio; this.canvas.style.width = rect.width+'px'; this.canvas.style.height = rect.height+'px'; this.ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
+  seed(count){
+    this.particles=[]; const rect = document.getElementById('stage').getBoundingClientRect();
+    for(let i=0;i<count;i++) this.particles.push({x:Math.random()*rect.width,y:Math.random()*rect.height,r:0.6+Math.random()*2.2,vx:(Math.random()-0.5)*0.4,vy:-0.1-Math.random()*0.6,life:40+Math.random()*140,alpha:0.2+Math.random()*0.8,hue:200});
+  }
+  start(){ if(this.running) return; this.running=true; this.last=performance.now(); this.frame(); }
+  stop(){ this.running=false; }
+  frame(){ if(!this.running) return; const now=performance.now(); const dt=(now-this.last)/1000; this.last=now; this.update(dt); this.draw(); requestAnimationFrame(()=>this.frame()); }
+  update(dt){
+    const rect = document.getElementById('stage').getBoundingClientRect();
+    for(const p of this.particles){
+      p.x += p.vx * dt * 60; p.y += p.vy * dt * 60; p.life -= dt*60;
+      if(p.life<=0 || p.y < -10 || p.x < -20 || p.x > rect.width+20){ p.x = Math.random()*rect.width; p.y = rect.height+8; p.vx=(Math.random()-0.5)*0.4; p.vy=-0.1-Math.random()*0.6; p.life=40+Math.random()*140; }
+    }
+  }
+  draw(){
+    const ctx=this.ctx; const rect = document.getElementById('stage').getBoundingClientRect(); ctx.clearRect(0,0,rect.width,rect.height);
+    for(const p of this.particles){
+      ctx.beginPath(); const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*4);
+      g.addColorStop(0,`hsla(${p.hue},80%,70%,${p.alpha})`); g.addColorStop(1,`hsla(${p.hue},90%,60%,0)`);
+      ctx.fillStyle=g; ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    }
+  }
+}
+const particleEngine = new ParticleEngine(document.getElementById('particleCanvas'));
+particleEngine.seed(40); particleEngine.start();
+
+/* Background animation loop */
+function bgLoop(now){
+  const speed = 12000;
+  const dt = now - lastUpdate; lastUpdate = now;
+  if(document.getElementById('bgCycle')?.checked) { timeNormalized += dt / speed; timeNormalized %= 1; if(document.getElementById('timeOfDay')) document.getElementById('timeOfDay').value = Math.round(timeNormalized*100); }
+  else timeNormalized = (document.getElementById('timeOfDay')?.value || 25)/100;
+  applySky(timeNormalized);
+  requestAnimationFrame(bgLoop);
+}
+lastUpdate = performance.now(); requestAnimationFrame(bgLoop);
+updateClouds();
+
+/* --------------------
+   Character customization
+   -------------------- */
+
+function showHair(style){
+  const options = ['short','long','ponytail','bangs'];
+  options.forEach(s=>{
+    const el = document.getElementById('hair-'+s);
+    if(!el) return;
+    el.style.display = (s===style) ? '' : 'none';
+  });
+}
+function showOutfit(style){
+  const options = ['tshirt','hoodie','dress'];
+  options.forEach(s=>{
+    const el = document.getElementById('outfit-'+s);
+    if(!el) return;
+    el.style.display = (s===style) ? '' : 'none';
+  });
+}
+function applyColors(){
+  // hair
+  const hairColor = ui.hairColor.value;
+  const hairEls = ['hairBack-short','hairFront-short','hairBack-long','hairFront-long','hairBack-pony','hairFront-pony','ponytail','hairBack-bangs','bangs','hairBack-short','hairFront-short'];
+  hairEls.forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.setAttribute('fill', hairColor);
+  });
+  // skin
+  document.getElementById('head').setAttribute('fill', ui.skinColor.value);
+  Array.from(document.querySelectorAll('#arm-left path,#arm-right path')).forEach(p=>p.setAttribute('fill', ui.skinColor.value));
+  // eyes
+  document.getElementById('eyeL-iris').setAttribute('fill', ui.eyeColor.value);
+  document.getElementById('eyeR-iris').setAttribute('fill', ui.eyeColor.value);
+  // outfit(s)
+  const outfitEls = ['torso-tshirt','torso-hoodie','torso-dress'];
+  outfitEls.forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.setAttribute('fill', ui.outfitColor.value);
+  });
+  // accessory color
+  const accCol = ui.accColor.value;
+  const glassesEls = document.querySelectorAll('#glasses path, #glasses rect');
+  glassesEls.forEach(el=>{
+    try{ el.setAttribute('stroke', accCol); el.setAttribute('fill', 'none'); } catch(e){}
+  });
+  const hatEls = document.querySelectorAll('#hat path');
+  hatEls.forEach(el=>{
+    try{ el.setAttribute('fill', accCol); } catch(e){}
+  });
+}
+
+function applyStyles(){
+  showHair(ui.hairStyle.value);
+  showOutfit(ui.outfitStyle.value);
+  // accessories
+  document.getElementById('glasses').style.display = ui.glassesToggle.checked ? '' : 'none';
+  document.getElementById('hat').style.display = ui.hatToggle.checked ? '' : 'none';
+  applyColors();
+}
+
+/* Randomize look */
+function randomizeLook(){
+  const hairOpts = ['short','long','ponytail','bangs'];
+  const outfitOpts = ['tshirt','hoodie','dress'];
+  ui.hairStyle.value = hairOpts[Math.floor(Math.random()*hairOpts.length)];
+  ui.outfitStyle.value = outfitOpts[Math.floor(Math.random()*outfitOpts.length)];
+  ui.glassesToggle.checked = Math.random() > 0.6;
+  ui.hatToggle.checked = Math.random() > 0.6;
+  // random nice colors
+  function randColor(){ return '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'); }
+  ui.hairColor.value = randColor();
+  ui.outfitColor.value = randColor();
+  ui.accColor.value = randColor();
+  ui.skinColor.value = ['#ffd8b6','#ffdfc4','#f9d7b6','#eac8a4'][Math.floor(Math.random()*4)];
+  ui.eyeColor.value = randColor();
+  applyStyles();
+}
+
+/* Reset to defaults */
+function resetDefaults(){
+  ui.hairColor.value = '#2b2b2b';
+  ui.skinColor.value = '#ffd8b6';
+  ui.eyeColor.value = '#2b6fdb';
+  ui.outfitColor.value = '#ff6b81';
+  ui.hairStyle.value = 'short';
+  ui.outfitStyle.value = 'tshirt';
+  ui.glassesToggle.checked = false;
+  ui.hatToggle.checked = false;
+  ui.accColor.value = '#2b2b2b';
+  applyStyles();
+}
+
+/* Wire up UI */
+document.getElementById('apply').addEventListener('click', applyStyles);
+document.getElementById('random').addEventListener('click', randomizeLook);
+document.getElementById('reset').addEventListener('click', resetDefaults);
+
+/* Update preview when color inputs change live */
+['hairColor','skinColor','eyeColor','outfitColor','accColor'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{ applyColors(); });
+});
+
+/* Small interactions */
+document.getElementById('stage').addEventListener('click', ()=>{
+  const s = document.getElementById('speech');
+  s.classList.toggle('visible');
+  if(s.classList.contains('visible')) s.textContent = "Love the new style!";
+});
+
+/* Center pose button */
+document.getElementById('centerPose').addEventListener('click', ()=>{ document.getElementById('scene').classList.remove('pose-wave','pose-jump'); });
+
+/* Download/preview (serialize SVG then draw onto canvas over sky) */
+async function downloadPNG(preview=false){
+  const canvas = document.createElement('canvas');
+  const w = 960, h = 720; canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  // sky
+  const c = skyColorsAt((document.getElementById('timeOfDay')?.value||25)/100);
+  const g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,c.top); g.addColorStop(1,c.bottom); ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  // simple cloud silhouettes
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; drawCloudSilhouette(ctx, w*0.15, h*0.18, 220, 54, 0.9); drawCloudSilhouette(ctx, w*0.7, h*0.12, 280, 64, 0.7); drawCloudSilhouette(ctx, w*0.55, h*0.28, 160, 46, 0.75);
+  // Serialize SVG
+  const svg = document.getElementById('animeSVG').cloneNode(true);
+  const style = document.createElementNS('http://www.w3.org/2000/svg','style');
+  style.textContent = 'svg{font-family:sans-serif}';
+  svg.insertBefore(style, svg.firstChild);
+  const serializer = new XMLSerializer(); const svgString = serializer.serializeToString(svg);
+  const blob = new Blob([svgString], {type:'image/svg+xml;charset=utf-8'}); const url = URL.createObjectURL(blob);
+  const img = new Image();
+  await new Promise((res,rej)=>{ img.onload = ()=>res(); img.onerror = rej; img.src = url; });
+  const scale = Math.min((w*0.6)/img.width, (h*0.7)/img.height); const iw = img.width*scale; const ih = img.height*scale; const ix = (w-iw)/2; const iy = (h-ih)/2 + 30;
+  ctx.drawImage(img, ix, iy, iw, ih);
+  URL.revokeObjectURL(url);
+  // speech bubble if visible
+  const speech = document.getElementById('speech');
+  if(speech && speech.classList.contains('visible') && speech.textContent.trim()){
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = 'rgba(10,30,50,0.06)'; ctx.lineWidth = 2;
+    const bx=40,by=40,bw=280,bh=60; roundRect(ctx,bx,by,bw,bh,12,true,true);
+    ctx.fillStyle = '#0b2947'; ctx.font = '18px sans-serif'; wrapText(ctx, speech.textContent, bx+12, by+30, bw-24, 20);
+  }
+  if(preview){ window.open(canvas.toDataURL('image/png'),'_blank'); return; }
+  const a = document.createElement('a'); a.download = 'anime-custom.png'; a.href = canvas.toDataURL('image/png'); a.click();
+}
+document.getElementById('download').addEventListener('click', ()=>downloadPNG(false));
+document.getElementById('screenshot').addEventListener('click', ()=>downloadPNG(true));
+
+/* helper drawing functions */
+function drawCloudSilhouette(ctx, x, y, w, h, alpha=1){ ctx.save(); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.ellipse(x, y+h*0.4, w*0.45, h*0.55, 0, 0, Math.PI*2); ctx.ellipse(x + w*0.22, y + h*0.05, w*0.35, h*0.45, 0, 0, Math.PI*2); ctx.ellipse(x - w*0.22, y + h*0.05, w*0.35, h*0.45, 0, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+function roundRect(ctx,x,y,w,h,r,fill,stroke){ if(typeof r==='undefined') r=5; ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); if(fill) ctx.fill(); if(stroke) ctx.stroke(); }
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){ const words = text.split(' '); let line=''; for(let n=0;n<words.length;n++){ const testLine = line + words[n] + ' '; const metrics = ctx.measureText(testLine); const testWidth = metrics.width; if(testWidth > maxWidth && n>0){ ctx.fillText(line, x, y); line = words[n] + ' '; y += lineHeight; } else { line = testLine; } } ctx.fillText(line, x, y); }
+
+/* initialize default look */
+resetDefaults();
+
+/* ensure particles resize */
+window.addEventListener('resize', ()=>{ particleEngine.resize(); updateClouds(); });
+
+</script>
+</body>
+</html>
